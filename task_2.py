@@ -1,15 +1,19 @@
-import time
-import random
+import matplotlib.pyplot as plt
+import timeit
 from functools import lru_cache
 
-# ---------- Варіант 1: Fibonacci з LRU-кешем ----------
+import matplotlib
+matplotlib.use('Agg')
+
+
+# ---------- Fibonacci with LRU Cache ----------
 @lru_cache(maxsize=None)
 def fibonacci_lru(n):
     if n <= 1:
         return n
     return fibonacci_lru(n - 1) + fibonacci_lru(n - 2)
 
-# ---------- Варіант 2: Fibonacci з Splay Tree-кешем ----------
+# ---------- Splay Tree Implementation ----------
 class SplayNode:
     def __init__(self, key, value):
         self.key = key
@@ -17,17 +21,17 @@ class SplayNode:
         self.left = None
         self.right = None
 
-class SplayTreeCache:
+class SplayTree:
     def __init__(self):
         self.root = None
 
-    def _right_rotate(self, x):
+    def _rotate_right(self, x):
         y = x.left
         x.left = y.right
         y.right = x
         return y
 
-    def _left_rotate(self, x):
+    def _rotate_left(self, x):
         y = x.right
         x.right = y.left
         y.left = x
@@ -42,31 +46,25 @@ class SplayTreeCache:
                 return root
             if key < root.left.key:
                 root.left.left = self._splay(root.left.left, key)
-                root = self._right_rotate(root)
+                root = self._rotate_right(root)
             elif key > root.left.key:
                 root.left.right = self._splay(root.left.right, key)
-                if root.left.right:
-                    root.left = self._left_rotate(root.left)
-            return root if root.left is None else self._right_rotate(root)
+                if root.left.right is not None:
+                    root.left = self._rotate_left(root.left)
+            return self._rotate_right(root) if root.left else root
         else:
             if root.right is None:
                 return root
             if key > root.right.key:
                 root.right.right = self._splay(root.right.right, key)
-                root = self._left_rotate(root)
+                root = self._rotate_left(root)
             elif key < root.right.key:
                 root.right.left = self._splay(root.right.left, key)
-                if root.right.left:
-                    root.right = self._right_rotate(root.right)
-            return root if root.right is None else self._left_rotate(root)
+                if root.right.left is not None:
+                    root.right = self._rotate_right(root.right)
+            return self._rotate_left(root) if root.right else root
 
-    def get(self, key):
-        self.root = self._splay(self.root, key)
-        if self.root and self.root.key == key:
-            return self.root.value
-        return None
-
-    def put(self, key, value):
+    def insert(self, key, value):
         if self.root is None:
             self.root = SplayNode(key, value)
             return
@@ -85,39 +83,53 @@ class SplayTreeCache:
             self.root.right = None
         self.root = new_node
 
-# ---------- Fibonacci з Splay Tree кешем ----------
-class FibonacciSplay:
-    def __init__(self):
-        self.cache = SplayTreeCache()
+    def get(self, key):
+        self.root = self._splay(self.root, key)
+        if self.root and self.root.key == key:
+            return self.root.value
+        return None
 
-    def compute(self, n):
-        cached = self.cache.get(n)
-        if cached is not None:
-            return cached
-        if n <= 1:
-            self.cache.put(n, n)
-            return n
-        val = self.compute(n - 1) + self.compute(n - 2)
-        self.cache.put(n, val)
-        return val
+# ---------- Fibonacci with Splay Tree ----------
+def fibonacci_splay(n, cache):
+    if n <= 1:
+        return n
+    cached = cache.get(n)
+    if cached is not None:
+        return cached
+    result = fibonacci_splay(n - 1, cache) + fibonacci_splay(n - 2, cache)
+    cache.insert(n, result)
+    return result
 
-# ---------- Тестування і порівняння ----------
-def benchmark(func, calls):
-    start = time.time()
-    for n in calls:
-        func(n)
-    return time.time() - start
+# ---------- Benchmark ----------
+ns = list(range(0, 1000, 50))
+lru_times = []
+splay_times = []
 
-if __name__ == "__main__":
-    # Генеруємо список випадкових n у діапазоні [10, 30]
-    test_calls = [random.randint(10, 30) for _ in range(500)]
+for n in ns:
+    # Time for LRU
+    fibonacci_lru.cache_clear()
+    lru_time = timeit.timeit(lambda: fibonacci_lru(n), number=1)
+    lru_times.append(lru_time)
 
-    # LRU
-    fibonacci_lru.cache_clear()  # обнуляємо кеш перед тестом
-    t1 = benchmark(fibonacci_lru, test_calls)
-    print(f"Час виконання з LRU-кешем: {t1:.4f} секунд")
+    # Time for Splay Tree
+    splay_cache = SplayTree()
+    splay_time = timeit.timeit(lambda: fibonacci_splay(n, splay_cache), number=1)
+    splay_times.append(splay_time)
 
-    # Splay
-    fib_splay = FibonacciSplay()
-    t2 = benchmark(fib_splay.compute, test_calls)
-    print(f"Час виконання з Splay Tree: {t2:.4f} секунд")
+# ---------- Plot ----------
+plt.figure(figsize=(12, 6))
+plt.plot(ns, lru_times, label='LRU Cache', marker='o')
+plt.plot(ns, splay_times, label='Splay Tree', marker='s')
+plt.xlabel('n (Fibonacci Index)')
+plt.ylabel('Execution Time (seconds)')
+plt.title('Fibonacci Performance: LRU Cache vs Splay Tree')
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.savefig("assets/fibonacci_comparison.png")
+
+# Виведення таблиці
+print(f"{'n':<10}{'LRU Cache Time (s)':<22}{'Splay Tree Time (s)':<22}")
+print("-" * 54)
+for n, lru, splay in zip(ns, lru_times, splay_times):
+    print(f"{n:<10}{lru:<22.8f}{splay:<22.8f}")
